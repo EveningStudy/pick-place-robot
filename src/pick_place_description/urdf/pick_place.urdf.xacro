@@ -1,0 +1,152 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="panda">
+  <xacro:include filename="$(find moveit_resources_panda_description)/urdf/panda.urdf.xacro"/>
+
+  <!-- The arm is bolted to the workbench. The fixed world joint also gives
+       MoveIt and TF one unambiguous planning frame. -->
+  <link name="world"/>
+  <joint name="world_to_panda" type="fixed">
+    <parent link="world"/>
+    <child link="panda_link0"/>
+    <origin xyz="0 0 0.80" rpy="0 0 0"/>
+  </joint>
+
+  <!-- A fixed overhead RGB-D camera. camera_link uses robot coordinates;
+       camera_optical_link uses the standard optical convention (+Z forward). -->
+  <link name="camera_mast">
+    <visual>
+      <origin xyz="0 0 0.42"/>
+      <geometry><box size="0.04 0.04 0.84"/></geometry>
+      <material name="mast_grey"><color rgba="0.18 0.20 0.24 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.42"/>
+      <geometry><box size="0.04 0.04 0.84"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.42"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.059" ixy="0" ixz="0" iyy="0.059" iyz="0" izz="0.00027"/>
+    </inertial>
+  </link>
+  <joint name="camera_mast_joint" type="fixed">
+    <parent link="panda_link0"/>
+    <child link="camera_mast"/>
+    <origin xyz="-0.18 0.48 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_link">
+    <visual>
+      <geometry><box size="0.10 0.06 0.05"/></geometry>
+      <material name="camera_black"><color rgba="0.04 0.05 0.06 1"/></material>
+    </visual>
+    <collision><geometry><box size="0.10 0.06 0.05"/></geometry></collision>
+    <inertial>
+      <mass value="0.15"/>
+      <inertia ixx="0.000076" ixy="0" ixz="0" iyy="0.000156" iyz="0" izz="0.00017"/>
+    </inertial>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="camera_mast"/>
+    <child link="camera_link"/>
+    <origin xyz="0.63 -0.48 0.82" rpy="0 1.57079632679 0"/>
+  </joint>
+
+  <link name="camera_optical_link"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_link"/>
+    <origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679"/>
+  </joint>
+
+  <gazebo reference="camera_link">
+    <sensor name="overhead_rgbd" type="rgbd_camera">
+      <topic>/camera</topic>
+      <gz_frame_id>camera_optical_link</gz_frame_id>
+      <update_rate>15</update_rate>
+      <camera>
+        <horizontal_fov>1.0472</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip><near>0.12</near><far>3.0</far></clip>
+      </camera>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+  <!-- Gazebo owns the simulated joint physics. ros2_control exposes those
+       joints to standard ROS trajectory and gripper controllers. -->
+  <ros2_control name="PandaGazeboSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+    <joint name="panda_joint1">
+      <command_interface name="position"><param name="min">-2.9671</param><param name="max">2.9671</param></command_interface>
+      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint2">
+      <command_interface name="position"><param name="min">-1.8326</param><param name="max">1.8326</param></command_interface>
+      <state_interface name="position"><param name="initial_value">-0.785</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint3">
+      <command_interface name="position"><param name="min">-2.9671</param><param name="max">2.9671</param></command_interface>
+      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint4">
+      <command_interface name="position"><param name="min">-3.1416</param><param name="max">0.0873</param></command_interface>
+      <state_interface name="position"><param name="initial_value">-2.356</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint5">
+      <command_interface name="position"><param name="min">-2.9671</param><param name="max">2.9671</param></command_interface>
+      <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint6">
+      <command_interface name="position"><param name="min">-0.0873</param><param name="max">3.8223</param></command_interface>
+      <state_interface name="position"><param name="initial_value">1.571</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint7">
+      <command_interface name="position"><param name="min">-2.9671</param><param name="max">2.9671</param></command_interface>
+      <state_interface name="position"><param name="initial_value">0.785</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_finger_joint1">
+      <command_interface name="position"><param name="min">0.0</param><param name="max">0.04</param></command_interface>
+      <state_interface name="position"><param name="initial_value">0.035</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <!-- finger 2 is mechanically coupled by the mimic tag in Panda's URDF. -->
+    <joint name="panda_finger_joint2">
+      <state_interface name="position"><param name="initial_value">0.035</param></state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(find pick_place_description)/config/ros2_controllers.yaml</parameters>
+    </plugin>
+
+    <!-- A robust simulation-only grasp constraint. It is detached at startup,
+         attached only after the fingers close, and detached above the bin. -->
+    <plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">
+      <!-- Fixed URDF links are merged by Gazebo; link7 is the nearest
+           non-fixed physical parent of link8 and the hand. -->
+      <parent_link>panda_link7</parent_link>
+      <child_model>target_cube</child_model>
+      <child_link>body</child_link>
+      <detach_topic>/gripper/detach</detach_topic>
+      <attach_topic>/gripper/attach</attach_topic>
+      <output_topic>/gripper/attached</output_topic>
+    </plugin>
+  </gazebo>
+</robot>

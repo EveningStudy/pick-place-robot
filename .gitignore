@@ -1,0 +1,17 @@
+# colcon output
+build/
+install/
+log/
+
+# Runtime output
+logs/
+
+# Python and editor files
+__pycache__/
+*.py[cod]
+.vscode/
+.idea/
+
+# Local environment
+.env
+.venv/

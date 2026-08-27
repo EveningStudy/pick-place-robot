@@ -1,0 +1,111 @@
+<?xml version="1.0"?>
+<sdf version="1.10">
+  <world name="pick_place_workcell">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <scene>
+      <ambient>0.45 0.45 0.45 1</ambient>
+      <background>0.08 0.10 0.14 1</background>
+      <shadows>true</shadows>
+      <grid>true</grid>
+    </scene>
+
+    <light name="sun" type="directional">
+      <pose>0 0 5 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1.0</intensity>
+      <direction>-0.4 0.2 -1.0</direction>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+    </light>
+    <light name="task_light" type="spot">
+      <pose>0.45 0 2.2 0 1.5708 0</pose>
+      <direction>0 0 -1</direction>
+      <cast_shadows>false</cast_shadows>
+      <intensity>3.0</intensity>
+      <spot><inner_angle>0.5</inner_angle><outer_angle>1.0</outer_angle><falloff>0.8</falloff></spot>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><plane><normal>0 0 1</normal><size>8 8</size></plane></geometry></collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>8 8</size></plane></geometry>
+          <material><ambient>0.22 0.24 0.27 1</ambient><diffuse>0.28 0.30 0.34 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="workbench">
+      <static>true</static>
+      <pose>0.35 0 0 0 0 0</pose>
+      <link name="top">
+        <pose>0 0 0.75 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>1.40 1.20 0.10</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.40 1.20 0.10</size></box></geometry>
+          <material><ambient>0.32 0.36 0.42 1</ambient><diffuse>0.42 0.46 0.52 1</diffuse></material>
+        </visual>
+      </link>
+      <link name="pedestal">
+        <pose>-0.35 0 0.38 0 0 0</pose>
+        <collision name="collision"><geometry><cylinder><radius>0.12</radius><length>0.76</length></cylinder></geometry></collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.12</radius><length>0.76</length></cylinder></geometry>
+          <material><ambient>0.12 0.14 0.18 1</ambient><diffuse>0.18 0.20 0.25 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="drop_bin">
+      <static>true</static>
+      <pose>0.48 -0.40 0.825 0 0 0</pose>
+      <link name="bin">
+        <visual name="floor"><pose>0 0 0 0 0 0</pose><geometry><box><size>0.28 0.24 0.03</size></box></geometry><material><ambient>0.08 0.25 0.55 1</ambient><diffuse>0.10 0.35 0.75 1</diffuse></material></visual>
+        <collision name="floor_collision"><geometry><box><size>0.28 0.24 0.03</size></box></geometry></collision>
+        <visual name="left"><pose>0 0.115 0.06 0 0 0</pose><geometry><box><size>0.28 0.02 0.12</size></box></geometry><material><ambient>0.08 0.25 0.55 1</ambient><diffuse>0.10 0.35 0.75 1</diffuse></material></visual>
+        <collision name="left_collision"><pose>0 0.115 0.06 0 0 0</pose><geometry><box><size>0.28 0.02 0.12</size></box></geometry></collision>
+        <visual name="right"><pose>0 -0.115 0.06 0 0 0</pose><geometry><box><size>0.28 0.02 0.12</size></box></geometry><material><ambient>0.08 0.25 0.55 1</ambient><diffuse>0.10 0.35 0.75 1</diffuse></material></visual>
+        <collision name="right_collision"><pose>0 -0.115 0.06 0 0 0</pose><geometry><box><size>0.28 0.02 0.12</size></box></geometry></collision>
+        <visual name="back"><pose>0.135 0 0.06 0 0 0</pose><geometry><box><size>0.02 0.24 0.12</size></box></geometry><material><ambient>0.08 0.25 0.55 1</ambient><diffuse>0.10 0.35 0.75 1</diffuse></material></visual>
+        <collision name="back_collision"><pose>0.135 0 0.06 0 0 0</pose><geometry><box><size>0.02 0.24 0.12</size></box></geometry></collision>
+      </link>
+    </model>
+
+    <model name="target_cube">
+      <pose>0.46 0.20 0.835 0 0 0.25</pose>
+      <link name="body">
+        <inertial><mass>0.08</mass><inertia><ixx>0.000048</ixx><iyy>0.000048</iyy><izz>0.000048</izz></inertia></inertial>
+        <collision name="collision">
+          <geometry><box><size>0.06 0.06 0.06</size></box></geometry>
+          <surface><friction><ode><mu>1.2</mu><mu2>1.2</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.06 0.06 0.06</size></box></geometry>
+          <material><ambient>0.9 0.04 0.03 1</ambient><diffuse>1.0 0.05 0.03 1</diffuse><specular>0.2 0.2 0.2 1</specular></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Distractors ensure perception must use colour, not simply select any blob. -->
+    <model name="green_distractor">
+      <static>true</static><pose>0.70 0.25 0.84 0 0 0</pose>
+      <link name="body"><collision name="c"><geometry><box><size>0.07 0.07 0.08</size></box></geometry></collision><visual name="v"><geometry><box><size>0.07 0.07 0.08</size></box></geometry><material><ambient>0.03 0.65 0.18 1</ambient><diffuse>0.04 0.85 0.22 1</diffuse></material></visual></link>
+    </model>
+    <model name="yellow_distractor">
+      <static>true</static><pose>0.66 -0.05 0.83 0 0 0</pose>
+      <link name="body"><collision name="c"><geometry><cylinder><radius>0.035</radius><length>0.06</length></cylinder></geometry></collision><visual name="v"><geometry><cylinder><radius>0.035</radius><length>0.06</length></cylinder></geometry><material><ambient>0.8 0.65 0.02 1</ambient><diffuse>1 0.8 0.02 1</diffuse></material></visual></link>
+    </model>
+  </world>
+</sdf>

@@ -1,0 +1,17 @@
+object_localizer:
+  ros__parameters:
+    rgb_topic: /camera/image
+    depth_topic: /camera/depth_image
+    camera_info_topic: /camera/camera_info
+    target_frame: world
+    minimum_area: 180.0
+    minimum_depth: 0.15
+    maximum_depth: 3.0
+    surface_to_center_offset: 0.03
+    smoothing_window: 7
+    hue_low_1: 0
+    hue_high_1: 12
+    hue_low_2: 170
+    hue_high_2: 179
+    saturation_min: 100
+    value_min: 70

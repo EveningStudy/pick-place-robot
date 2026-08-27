@@ -1,0 +1,42 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    panda_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    hand_controller:
+      type: parallel_gripper_action_controller/GripperActionController
+
+panda_arm_controller:
+  ros__parameters:
+    joints:
+      - panda_joint1
+      - panda_joint2
+      - panda_joint3
+      - panda_joint4
+      - panda_joint5
+      - panda_joint6
+      - panda_joint7
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    allow_partial_joints_goal: false
+    action_monitor_rate: 20.0
+
+hand_controller:
+  ros__parameters:
+    joint: panda_finger_joint1
+    state_interfaces:
+      - position
+      - velocity
+    action_monitor_rate: 20.0
+    # A position-controlled simulated gripper stops on object contact. Accept a
+    # few millimetres of residual error as a valid grasp instead of demanding
+    # that the fingers numerically pass through the workpiece.
+    goal_tolerance: 0.008

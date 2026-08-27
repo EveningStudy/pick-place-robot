@@ -1,0 +1,20 @@
+vision_pick_place_task:
+  ros__parameters:
+    object_pose_topic: /perception/object_pose
+    detection_timeout: 20.0
+    max_detection_age: 1.0
+    arm_group: panda_arm
+    end_effector_link: panda_hand
+    planning_frame: world
+    open_width: 0.035
+    grasp_width: 0.028
+    grasp_offset: 0.105
+    pregrasp_clearance: 0.28
+    retreat_clearance: 0.30
+    place_x: 0.48
+    place_y: -0.40
+    place_object_z: 0.88
+    velocity_scale: 0.25
+    acceleration_scale: 0.20
+    planning_time: 8.0
+    planning_attempts: 8
