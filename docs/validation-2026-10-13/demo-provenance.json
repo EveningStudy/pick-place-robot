@@ -1,0 +1,10 @@
+{
+  "source": "/home/chris/project/robot-validation-2026-10-13/demo/pick_02",
+  "source_sim_start": 19.625,
+  "source_sim_end": 41.5,
+  "playback_speed": 1.09375,
+  "timebase": "simulation",
+  "continuous": true,
+  "note": "Observer camera added for recording only; original task uses grasp constraint and set-pose release assistance.",
+  "gif_sha256": "48f02a7595efd6421f6273e2d8508272e132c77f6529318eb3f966c751d1f64b"
+}

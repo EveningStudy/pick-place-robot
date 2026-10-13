@@ -1,0 +1,21 @@
+project,trial,wall_seconds,outcome,evidence_directory,success,detail
+pick,1,58.028,success,final_v2/pick/trial_01,True,completed
+pick,2,58.035,success,final_v2/pick/trial_02,True,completed
+pick,3,59.035,success,final_v2/pick/trial_03,True,completed
+pick,4,54.024,success,final_v2/pick/trial_04,True,completed
+pick,5,54.03,success,final_v2/pick/trial_05,True,completed
+pick,6,74.037,success,final_v2/pick/trial_06,True,completed
+pick,7,61.038,success,final_v2/pick/trial_07,True,completed
+pick,8,63.033,success,final_v2/pick/trial_08,True,completed
+pick,9,64.039,success,final_v2/pick/trial_09,True,completed
+pick,10,60.035,success,final_v2/pick/trial_10,True,completed
+pick,11,57.035,success,final_v2/pick/trial_11,True,completed
+pick,12,57.03,success,final_v2/pick/trial_12,True,completed
+pick,13,73.045,success,final_v2/pick/trial_13,True,completed
+pick,14,66.042,success,final_v2/pick/trial_14,True,completed
+pick,15,65.035,failure,final_v2/pick/trial_15,False,VERIFYING_PLACEMENT: Vision did not confirm the object inside the bin
+pick,16,46.024,failure,final_v2/pick/trial_16,False,INITIALIZING: Controllers or current robot state did not become ready
+pick,17,59.035,success,final_v2/pick/trial_17,True,completed
+pick,18,62.043,success,final_v2/pick/trial_18,True,completed
+pick,19,59.034,success,final_v2/pick/trial_19,True,completed
+pick,20,67.043,success,final_v2/pick/trial_20,True,completed

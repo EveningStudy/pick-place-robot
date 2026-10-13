@@ -9,6 +9,7 @@ find_package(ament_cmake REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
+find_package(moveit_core REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
@@ -22,6 +23,7 @@ ament_target_dependencies(vision_pick_place_task
   control_msgs
   geometry_msgs
   moveit_msgs
+  moveit_core
   moveit_ros_planning_interface
   rclcpp
   rclcpp_action

@@ -70,6 +70,7 @@ class ObjectLocalizer(Node):
             maxlen=max(1, int(self.parameter("smoothing_window")))
         )
         self.last_log_ns = 0
+        self.last_position_stamp = None
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -95,7 +96,7 @@ class ObjectLocalizer(Node):
         self.synchronizer = message_filters.ApproximateTimeSynchronizer(
             [rgb_subscriber, depth_subscriber],
             queue_size=10,
-            slop=0.12,
+            slop=0.02,
         )
         self.synchronizer.registerCallback(self.rgbd_callback)
 
@@ -144,6 +145,7 @@ class ObjectLocalizer(Node):
 
         detection = self.detect_target(image)
         if self.intrinsics is None or detection is None:
+            self.positions.clear()
             self.valid_publisher.publish(Bool(data=False))
             status = "waiting for CameraInfo" if self.intrinsics is None else "target not visible"
             cv2.putText(image, status, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -153,6 +155,7 @@ class ObjectLocalizer(Node):
         contour, mask = detection
         area = cv2.contourArea(contour)
         if area < self.minimum_area:
+            self.positions.clear()
             self.valid_publisher.publish(Bool(data=False))
             self.publish_debug(image, rgb_message)
             return
@@ -162,6 +165,7 @@ class ObjectLocalizer(Node):
         pixel_v = int(moments["m01"] / moments["m00"])
         target_depth = self.robust_depth(depth, mask, image.shape[:2])
         if target_depth is None:
+            self.positions.clear()
             self.valid_publisher.publish(Bool(data=False))
             cv2.putText(image, "depth invalid", (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             self.publish_debug(image, rgb_message)
@@ -178,11 +182,12 @@ class ObjectLocalizer(Node):
             transform = self.tf_buffer.lookup_transform(
                 self.target_frame,
                 point.header.frame_id,
-                Time(),
-                timeout=Duration(seconds=0.2),
+                Time.from_msg(rgb_message.header.stamp),
+                timeout=Duration(seconds=0.0),
             )
             point_world = do_transform_point(point, transform)
         except TransformException as exception:
+            self.positions.clear()
             self.valid_publisher.publish(Bool(data=False))
             self.throttled_warning(f"Camera TF is not ready: {exception}")
             self.publish_debug(image, rgb_message)
@@ -190,13 +195,16 @@ class ObjectLocalizer(Node):
 
         # Depth measures the visible top face. The task plans to the cube centre.
         point_world.point.z -= self.surface_to_center_offset
-        self.positions.append(
-            [point_world.point.x, point_world.point.y, point_world.point.z]
+        stamp = Time.from_msg(rgb_message.header.stamp).nanoseconds / 1e9
+        filtered = self.filter_position(
+            [point_world.point.x, point_world.point.y, point_world.point.z], stamp
         )
-        filtered = np.median(np.asarray(self.positions), axis=0)
 
         pose = PoseStamped()
         pose.header = point_world.header
+        # Static-camera TF can have stamp zero. Preserve exposure time so task
+        # verification can reject stale pre-release observations.
+        pose.header.stamp = rgb_message.header.stamp
         pose.pose.position.x = float(filtered[0])
         pose.pose.position.y = float(filtered[1])
         pose.pose.position.z = float(filtered[2])
@@ -216,6 +224,19 @@ class ObjectLocalizer(Node):
         if now_ns - self.last_log_ns > 2_000_000_000:
             self.last_log_ns = now_ns
             self.get_logger().info(f"Detected target at {text[7:]}")
+
+    def filter_position(self, position, stamp):
+        """Do not mix old pre-grasp samples into a newly visible placed object."""
+        point = np.asarray(position)
+        if self.last_position_stamp is not None:
+            age = stamp - self.last_position_stamp
+            if age < 0.0 or age > 0.5:
+                self.positions.clear()
+        if self.positions and np.linalg.norm(point - self.positions[-1]) > 0.10:
+            self.positions.clear()
+        self.positions.append(position)
+        self.last_position_stamp = stamp
+        return np.median(np.asarray(self.positions), axis=0)
 
     def detect_target(self, image):
         hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)

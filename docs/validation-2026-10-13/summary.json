@@ -1,0 +1,15 @@
+{
+  "completed_trials": 20,
+  "successes": 18,
+  "rate_percent": 90.0,
+  "wilson_95_percent_interval": [
+    69.9,
+    97.21
+  ],
+  "sample_directory": "final_v2",
+  "median_wall_seconds": 59.53,
+  "failure_reasons": {
+    "VERIFYING_PLACEMENT: Vision did not confirm the object inside the bin": 1,
+    "INITIALIZING: Controllers or current robot state did not become ready": 1
+  }
+}

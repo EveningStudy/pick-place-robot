@@ -14,10 +14,15 @@
 #include <vector>
 
 #include <control_msgs/action/parallel_gripper_command.hpp>
+#include <control_msgs/action/follow_joint_trajectory.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
+#include <moveit/robot_trajectory/robot_trajectory.hpp>
+#include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
+#include <moveit/robot_state/conversions.hpp>
 #include <moveit_msgs/msg/collision_object.hpp>
+#include <moveit_msgs/srv/get_state_validity.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <ros_gz_interfaces/srv/set_entity_pose.hpp>
@@ -33,6 +38,7 @@ class VisionPickPlaceTask
 public:
   using GripperCommand = control_msgs::action::ParallelGripperCommand;
   using GripperGoalHandle = rclcpp_action::ClientGoalHandle<GripperCommand>;
+  using ArmTrajectory = control_msgs::action::FollowJointTrajectory;
 
   explicit VisionPickPlaceTask(const rclcpp::Node::SharedPtr & node)
   : node_(node),
@@ -93,8 +99,12 @@ public:
       "/pick_place/status", 10);
     gripper_client_ = rclcpp_action::create_client<GripperCommand>(
       node_, "/hand_controller/gripper_cmd");
+    arm_controller_client_ = rclcpp_action::create_client<ArmTrajectory>(
+      node_, "/panda_arm_controller/follow_joint_trajectory");
     set_pose_client_ = node_->create_client<ros_gz_interfaces::srv::SetEntityPose>(
       "/world/pick_place_workcell/set_pose");
+    state_validity_client_ = node_->create_client<moveit_msgs::srv::GetStateValidity>(
+      "/check_state_validity");
 
     start_service_ = node_->create_service<std_srvs::srv::Trigger>(
       "/pick_place/start",
@@ -140,16 +150,24 @@ private:
     }
     worker_ = std::thread([this]() {
       const bool success = run_once();
-      running_ = false;
       if (!success) {
         recover();
       }
+      running_ = false;
     });
   }
 
   bool run_once()
   {
+    run_object_pose_.reset();
     publish_status("INITIALIZING", "Waiting for simulation interfaces");
+
+    // Launch timers are only a convenience, not a readiness guarantee on a
+    // busy machine. Never plan before both hardware action servers exist.
+    if (!arm_controller_client_->wait_for_action_server(60s) ||
+        !gripper_client_->wait_for_action_server(30s) || !arm_.getCurrentState(10.0)) {
+      return fail("INITIALIZING", "Controllers or current robot state did not become ready");
+    }
 
     // DetachableJoint starts attached by design. Wait for an explicit state
     // confirmation so bridge and plugin startup order cannot race the task.
@@ -194,7 +212,7 @@ private:
       detected_pose->pose.position.x,
       detected_pose->pose.position.y,
       detected_pose->pose.position.z + grasp_offset_);
-    if (!move_pose(grasp, "APPROACHING_OBJECT")) {
+    if (!move_linear(grasp, "APPROACHING_OBJECT")) {
       return fail("APPROACHING_OBJECT", "Could not descend to the grasp pose");
     }
 
@@ -214,19 +232,25 @@ private:
 
     geometry_msgs::msg::Pose retreat = grasp;
     retreat.position.z = detected_pose->pose.position.z + grasp_offset_ + retreat_clearance_;
-    if (!move_pose(retreat, "LIFTING_OBJECT")) {
+    if (!move_linear(retreat, "LIFTING_OBJECT")) {
       return fail("LIFTING_OBJECT", "Could not lift the attached object");
     }
 
-    geometry_msgs::msg::Pose preplace = downward_pose(
-      place_x_, place_y_, place_object_z_ + grasp_offset_ + 0.28);
+    // Place the OBJECT at the requested height, not the hand at a nominal
+    // grasp offset. Controller tolerances change the actual grasp transform;
+    // assuming a fixed offset can put the attached collision box into the bin.
+    const auto place_target = placement_hand_pose();
+    if (!place_target) {
+      return fail("MOVING_TO_BIN", "Could not read the attached workpiece transform");
+    }
+    geometry_msgs::msg::Pose place = *place_target;
+    geometry_msgs::msg::Pose preplace = place;
+    preplace.position.z += 0.28;
     if (!move_pose(preplace, "MOVING_TO_BIN")) {
       return fail("MOVING_TO_BIN", "Could not carry the object above the bin");
     }
 
-    geometry_msgs::msg::Pose place = downward_pose(
-      place_x_, place_y_, place_object_z_ + grasp_offset_);
-    if (!move_pose(place, "LOWERING_INTO_BIN")) {
+    if (!move_linear(place, "LOWERING_INTO_BIN")) {
       return fail("LOWERING_INTO_BIN", "Could not lower the object into the bin");
     }
 
@@ -241,7 +265,7 @@ private:
 
     geometry_msgs::msg::Pose postplace = place;
     postplace.position.z += 0.25;
-    if (!move_pose(postplace, "RETREATING_FROM_BIN")) {
+    if (!move_linear(postplace, "RETREATING_FROM_BIN")) {
       return fail("RETREATING_FROM_BIN", "Object placed, but retreat failed");
     }
 
@@ -262,6 +286,42 @@ private:
     publish_status("SUCCEEDED", "Detected, picked, transported, and placed one object");
     write_log(true, "completed");
     return true;
+  }
+
+  std::optional<geometry_msgs::msg::Pose> placement_hand_pose()
+  {
+    const auto objects = planning_scene_.getAttachedObjects({"target_cube"});
+    const auto found = objects.find("target_cube");
+    if (found == objects.end()) {
+      return std::nullopt;
+    }
+    const auto & attached = found->second;
+    if (attached.link_name != end_effector_link_ ||
+        attached.object.header.frame_id != end_effector_link_ ||
+        attached.object.primitive_poses.size() != 1) {
+      return std::nullopt;
+    }
+    const auto & origin = attached.object.pose;
+    const auto & shape = attached.object.primitive_poses.front();
+    const Eigen::Quaterniond rotation(origin.orientation.w, origin.orientation.x,
+      origin.orientation.y, origin.orientation.z);
+    const Eigen::Vector3d offset = Eigen::Vector3d(origin.position.x, origin.position.y,
+      origin.position.z) + rotation * Eigen::Vector3d(shape.position.x, shape.position.y,
+      shape.position.z);
+    if (!offset.allFinite() || offset.norm() > 0.30) {
+      return std::nullopt;
+    }
+    auto target = downward_pose(place_x_, place_y_, place_object_z_);
+    const Eigen::Quaterniond hand_rotation(target.orientation.w, target.orientation.x,
+      target.orientation.y, target.orientation.z);
+    const Eigen::Vector3d world_offset = hand_rotation * offset;
+    target.position.x -= world_offset.x();
+    target.position.y -= world_offset.y();
+    target.position.z -= world_offset.z();
+    RCLCPP_INFO(node_->get_logger(),
+      "Measured grasp offset=(%.6f, %.6f, %.6f); placement hand=(%.6f, %.6f, %.6f)",
+      offset.x(), offset.y(), offset.z(), target.position.x, target.position.y, target.position.z);
+    return target;
   }
 
   bool move_named(const std::string & target, const std::string & state)
@@ -288,6 +348,91 @@ private:
     const auto result = arm_.move();
     arm_.stop();
     arm_.clearPoseTargets();
+    return result == moveit::core::MoveItErrorCode::SUCCESS;
+  }
+
+  bool move_linear(const geometry_msgs::msg::Pose & pose, const std::string & state)
+  {
+    // Short vertical motions should continue the current IK branch. Re-sampling
+    // an unconstrained OMPL goal here can choose a different redundant-arm
+    // posture or fail to sample the near-contact placement pose at all.
+    publish_status(state, "Planning collision-checked Cartesian segment");
+    arm_.clearPoseTargets();
+    const auto start = arm_.getCurrentState(2.0);
+    if (!start) {
+      return false;
+    }
+    arm_.setStartState(*start);
+    if (state == "LOWERING_INTO_BIN") {
+      const auto attached = planning_scene_.getAttachedObjects({"target_cube"});
+      for (const auto & entry : attached) {
+        const auto & origin = entry.second.object.pose;
+        RCLCPP_INFO(node_->get_logger(), "Attached origin xyz=(%.6f, %.6f, %.6f)",
+          origin.position.x, origin.position.y, origin.position.z);
+        for (const auto & p : entry.second.object.primitive_poses) {
+          RCLCPP_INFO(node_->get_logger(), "Attached cube frame=%s link=%s xyz=(%.6f, %.6f, %.6f)",
+            entry.second.object.header.frame_id.c_str(), entry.second.link_name.c_str(),
+            p.position.x, p.position.y, p.position.z);
+        }
+      }
+    }
+    moveit_msgs::msg::RobotTrajectory message;
+    moveit_msgs::msg::MoveItErrorCodes error;
+    const double fraction = arm_.computeCartesianPath({pose}, 0.005, message, true, &error);
+    RCLCPP_INFO(node_->get_logger(), "%s Cartesian fraction %.6f, error %d",
+      state.c_str(), fraction, error.val);
+    if (error.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS || fraction < 1.0 - 1e-6 ||
+        message.joint_trajectory.points.size() < 2) {
+      RCLCPP_WARN(node_->get_logger(), "Rejecting incomplete Cartesian path; trying collision-checked OMPL");
+      return move_pose(pose, state + "_OMPL_FALLBACK");
+    }
+    // The modern Cartesian API no longer has a jump-threshold argument. Reject
+    // discontinuous IK branches explicitly before any trajectory is executed.
+    const auto & points = message.joint_trajectory.points;
+    for (std::size_t i = 1; i < points.size(); ++i) {
+      for (std::size_t j = 0; j < points[i].positions.size(); ++j) {
+        if (std::abs(points[i].positions[j] - points[i - 1].positions[j]) > 0.25) {
+          RCLCPP_WARN(node_->get_logger(), "Rejecting Cartesian joint jump at waypoint %zu", i);
+          return move_pose(pose, state + "_OMPL_FALLBACK");
+        }
+      }
+    }
+    // Cartesian paths require explicit timing; preserve the original velocity
+    // and acceleration limits. Recheck the retimed waypoints because TOTG may
+    // deviate slightly from the original path during resampling.
+    robot_trajectory::RobotTrajectory trajectory(arm_.getRobotModel(), arm_.getName());
+    trajectory.setRobotTrajectoryMsg(*start, message);
+    trajectory_processing::TimeOptimalTrajectoryGeneration timing(0.001, 0.02);
+    if (!timing.computeTimeStamps(trajectory, arm_.getMaxVelocityScalingFactor(),
+        arm_.getMaxAccelerationScalingFactor())) {
+      return false;
+    }
+    if (!state_validity_client_->wait_for_service(2s)) {
+      return false;
+    }
+    for (std::size_t i = 0; i < trajectory.getWayPointCount(); ++i) {
+      auto request = std::make_shared<moveit_msgs::srv::GetStateValidity::Request>();
+      request->group_name = arm_.getName();
+      moveit::core::robotStateToRobotStateMsg(trajectory.getWayPoint(i), request->robot_state, false);
+      request->robot_state.is_diff = true;  // Keep the scene's attached workpiece.
+      auto checked = state_validity_client_->async_send_request(request);
+      if (checked.wait_for(2s) != std::future_status::ready) {
+        return false;
+      }
+      const auto validity = checked.get();
+      if (!validity->valid) {
+        RCLCPP_WARN(node_->get_logger(), "Rejecting invalid retimed waypoint %zu", i);
+        for (const auto & contact : validity->contacts) {
+          RCLCPP_WARN(node_->get_logger(), "Retimed collision: %s / %s depth %.6f",
+            contact.contact_body_1.c_str(), contact.contact_body_2.c_str(), contact.depth);
+        }
+        return false;
+      }
+    }
+    trajectory.getRobotTrajectoryMsg(message);
+    const auto result = arm_.execute(message);
+    arm_.stop();
+    arm_.setStartStateToCurrentState();
     return result == moveit::core::MoveItErrorCode::SUCCESS;
   }
 
@@ -392,8 +537,14 @@ private:
 
   bool wait_for_placed_pose()
   {
-    const auto deadline = std::chrono::steady_clock::now() + 6s;
-    while (rclcpp::ok() && std::chrono::steady_clock::now() < deadline) {
+    // Give physics/sensors six simulation seconds, bounded by 20 wall seconds
+    // if the simulator stalls. Software rendering can run below real time.
+    const auto started = node_->now();
+    const auto deadline = std::chrono::steady_clock::now() + 20s;
+    rclcpp::Time last_sample(0, 0, RCL_ROS_TIME);
+    int confirmed_frames = 0;
+    while (rclcpp::ok() && std::chrono::steady_clock::now() < deadline &&
+        (node_->now() - started).seconds() < 6.0) {
       {
         std::scoped_lock lock(pose_mutex_);
         if (latest_pose_) {
@@ -401,10 +552,17 @@ private:
           const bool inside_xy = std::abs(point.x - place_x_) < 0.12 &&
             std::abs(point.y - place_y_) < 0.10;
           const bool resting_height = point.z > 0.84 && point.z < 0.92;
-          if (inside_xy && resting_height) {
+          const rclcpp::Time stamp(latest_pose_->header.stamp, RCL_ROS_TIME);
+          const double age = (node_->now() - stamp).seconds();
+          if (stamp > last_sample) {
+            confirmed_frames = (stamp > started && age >= 0.0 &&
+              age <= max_detection_age_ && inside_xy && resting_height) ? confirmed_frames + 1 : 0;
+            last_sample = stamp;
+          }
+          if (confirmed_frames >= 3) {
             std::ostringstream details;
             details << std::fixed << std::setprecision(3)
-                    << "Vision confirmed bin pose = (" << point.x << ", "
+                    << "Three fresh frames confirmed bin pose = (" << point.x << ", "
                     << point.y << ", " << point.z << ")";
             publish_status("PLACEMENT_CONFIRMED", details.str());
             return true;
@@ -565,6 +723,7 @@ private:
   moveit::planning_interface::MoveGroupInterface arm_;
   moveit::planning_interface::PlanningSceneInterface planning_scene_;
   rclcpp_action::Client<GripperCommand>::SharedPtr gripper_client_;
+  rclcpp_action::Client<ArmTrajectory>::SharedPtr arm_controller_client_;
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subscription_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr grasp_state_subscription_;
@@ -572,6 +731,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr detach_publisher_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_publisher_;
   rclcpp::Client<ros_gz_interfaces::srv::SetEntityPose>::SharedPtr set_pose_client_;
+  rclcpp::Client<moveit_msgs::srv::GetStateValidity>::SharedPtr state_validity_client_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr start_service_;
 
   std::mutex pose_mutex_;

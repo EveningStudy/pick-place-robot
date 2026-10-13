@@ -10,6 +10,7 @@
   <depend>control_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>moveit_msgs</depend>
+  <depend>moveit_core</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>

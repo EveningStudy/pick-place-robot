@@ -57,7 +57,7 @@ def generate_launch_description():
             str(ros_gz_share / "launch" / "gz_sim.launch.py")
         ),
         launch_arguments={
-            "gz_args": f"-r -v 3 {world_file}",
+            "gz_args": [LaunchConfiguration("gz_flags"), f" {world_file}"],
             "on_exit_shutdown": "true",
         }.items(),
     )
@@ -169,9 +169,7 @@ def generate_launch_description():
             {
                 "use_sim_time": True,
                 "auto_start": ParameterValue(auto_start, value_type=bool),
-                "log_file": str(
-                    workspace_root / "logs" / "pick_place_runs.csv"
-                ),
+                "log_file": LaunchConfiguration("log_file"),
             },
         ],
     )
@@ -190,6 +188,15 @@ def generate_launch_description():
     # manager -> controllers/MoveIt -> perception/task UI.
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "gz_flags", default_value="-r -v 3",
+                description="Gazebo flags; use '-s -r -v 3' for server-only tests",
+            ),
+            DeclareLaunchArgument(
+                "log_file",
+                default_value=str(workspace_root / "logs" / "pick_place_runs.csv"),
+                description="CSV run log destination",
+            ),
             DeclareLaunchArgument(
                 "rviz", default_value="true", description="Open RViz 2"
             ),
